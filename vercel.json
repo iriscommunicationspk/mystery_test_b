@@ -7,4 +7,3 @@
       { "src": "/(.*)", "dest": "src/index.js" }
     ]
   }
-  ß
