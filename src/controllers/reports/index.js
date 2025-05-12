@@ -794,6 +794,11 @@ const saveReport = async (req, res) => {
  */
 const getReports = async (req, res) => {
   try {
+    // Set cache control headers to prevent browser caching
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+
     const { client_id } = req.params;
     const { user_id, user_email, user_role } = req.query; // Get user_id, user_email and user_role from query params
 
@@ -1298,6 +1303,11 @@ const getReports = async (req, res) => {
  */
 const getReportById = async (req, res) => {
   try {
+    // Set cache control headers to prevent browser caching
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+
     const { id } = req.params;
     const { table, client_id, user_email, user_role } = req.query;
 
@@ -1950,15 +1960,23 @@ const updateReportStatus = async (req, res) => {
   }
 };
 
-// Add new function for client dashboard data
+/**
+ * Get client dashboard data
+ * @param {Object} req - Request object
+ * @param {Object} res - Response object
+ */
 const getClientDashboardData = async (req, res) => {
   try {
-    const { client_id, user_email, user_role } = req.body;
+    // Set cache control headers to prevent browser caching
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+    res.set("Pragma", "no-cache");
+    res.set("Expires", "0");
+
+    const { client_id, user_email, user_role } = req.query;
 
     if (!client_id) {
       return res.status(400).json({
-        status: "error",
-        message: "Client ID is required",
+        error: "Client ID is required",
       });
     }
 
