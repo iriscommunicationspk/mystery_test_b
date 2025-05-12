@@ -56,7 +56,7 @@ async function sendTestResetEmail(resetToken) {
   try {
     // The frontend URL that hosts the reset form
     const frontendUrl =
-      process.env.FRONTEND_URL || "https://ms.iriscommunications.cloud";
+     "https://ms.iriscommunications.cloud";
 
     // Create the reset URL that would be in the email
     const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(

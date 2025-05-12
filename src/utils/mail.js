@@ -45,8 +45,7 @@ const sendPasswordResetEmail = async (to, resetToken, name = "") => {
     const transporter = await createTransporter();
 
     // Frontend URL (should be in ENV)
-    const frontendUrl =
-      process.env.FRONTEND_URL || "https://ms.iriscommunications.cloud";
+    const frontendUrl = "https://ms.iriscommunications.cloud";
 
     // Create reset URL - ensure it has the correct absolute path
     // Adding timestamp and direct params to avoid caching and routing issues
@@ -118,8 +117,7 @@ const sendPasswordResetConfirmationEmail = async (to, name = "") => {
     const transporter = await createTransporter();
 
     // Frontend URL (should be in ENV)
-    const frontendUrl =
-      process.env.FRONTEND_URL || "https://ms.iriscommunications.cloud";
+    const frontendUrl = "https://ms.iriscommunications.cloud";
 
     // Login URL
     const loginUrl = `${frontendUrl}/`;
