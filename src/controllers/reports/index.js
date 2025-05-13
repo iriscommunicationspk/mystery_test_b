@@ -2039,11 +2039,233 @@ const getClientDashboardData = async (req, res) => {
     let whereClause = "r.client_id = ? AND r.status = 'approved'";
     let queryParams = [client_id];
 
-    // REMOVED: Special handling for client_user role - Now all users can see all approved reports
-    // Logging that branch filtering is bypassed
-    console.log(
-      `Branch filtering bypassed: ${user_email} with role ${user_role} can see all reports`
-    );
+    // Special handling for client_user role - they should only see reports for their assigned branches
+    let allowedReportIds = null;
+    const isClientUser = user_role === "client_user";
+
+    if (isClientUser && user_email) {
+      // Check if the client-specific branches table exists
+      const [branchesTableExists] = await db.query(
+        "SELECT COUNT(*) as count FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+        [clientBranchesTable]
+      );
+
+      if (branchesTableExists[0].count > 0) {
+        console.log(
+          `Client user detected with email: ${user_email}, filtering reports by branch access`
+        );
+
+        try {
+          // First, find all column names in the branches table
+          const [columnsResult] = await db.query(
+            `SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
+             WHERE TABLE_SCHEMA = DATABASE() 
+             AND TABLE_NAME = ?`,
+            [clientBranchesTable]
+          );
+
+          console.log(
+            `Found ${columnsResult.length} columns in branch table: ${clientBranchesTable}`
+          );
+
+          // Find potential identifier columns (usually primary fields)
+          const potentialIdColumns = columnsResult
+            .filter(
+              (col) =>
+                col.COLUMN_NAME.toLowerCase() === "branch_code" ||
+                col.COLUMN_NAME.toLowerCase() === "code" ||
+                col.COLUMN_NAME.toLowerCase() === "id" ||
+                col.COLUMN_NAME.toLowerCase() === "uuid" ||
+                col.COLUMN_NAME.toLowerCase() === "branch_id" ||
+                col.COLUMN_NAME.toLowerCase() === "region" ||
+                col.COLUMN_NAME.toLowerCase() === "area"
+            )
+            .map((col) => col.COLUMN_NAME);
+
+          // Find email columns
+          const emailColumns = columnsResult
+            .filter(
+              (col) =>
+                col.COLUMN_NAME.toLowerCase().includes("email") ||
+                col.COLUMN_NAME.toLowerCase().includes("mail")
+            )
+            .map((col) => col.COLUMN_NAME);
+
+          // Get all branches records
+          const [branchesData] = await db.query(
+            `SELECT * FROM ${clientBranchesTable}`
+          );
+
+          console.log(`Found ${branchesData.length} branches in total`);
+
+          // First, find branches assigned to this user's email
+          const userBranches = [];
+          const primaryFieldValues = new Set();
+
+          // Normalize user email for comparison
+          const normalizedUserEmail = user_email.toLowerCase().trim();
+
+          // Find branches where user's email appears in any email column
+          for (const branch of branchesData) {
+            let hasAccess = false;
+
+            // Check each potential email column
+            for (const emailColumn of emailColumns) {
+              const emailValue = branch[emailColumn];
+              if (!emailValue) continue;
+
+              // Convert to string for comparison
+              const emailValueStr = String(emailValue).toLowerCase();
+
+              // Check for exact match
+              if (emailValueStr === normalizedUserEmail) {
+                hasAccess = true;
+                break;
+              }
+
+              // Check for email in comma/semicolon separated list
+              if (emailValueStr.includes(",") || emailValueStr.includes(";")) {
+                const emails = emailValueStr
+                  .split(/[,;]/)
+                  .map((e) => e.trim().toLowerCase());
+
+                if (emails.includes(normalizedUserEmail)) {
+                  hasAccess = true;
+                  break;
+                }
+              }
+
+              // Check for substring match as last resort
+              if (emailValueStr.includes(normalizedUserEmail)) {
+                hasAccess = true;
+                break;
+              }
+            }
+
+            // If user has access to this branch, add it to userBranches and collect its primary field values
+            if (hasAccess) {
+              userBranches.push(branch);
+
+              // Collect all potential primary field values
+              for (const idColumn of potentialIdColumns) {
+                if (branch[idColumn]) {
+                  primaryFieldValues.add(String(branch[idColumn]));
+                }
+              }
+            }
+          }
+
+          console.log(
+            `Found ${userBranches.length} branches assigned to user's email`
+          );
+          console.log(
+            `Primary field values from user's branches: ${Array.from(
+              primaryFieldValues
+            ).join(", ")}`
+          );
+
+          // Get all reports with their primary field values
+          const [reportsData] = await db.query(
+            `SELECT id, primary_field_name, primary_field_value, content 
+             FROM ${clientReportsTable} 
+             WHERE ${whereClause}`,
+            queryParams
+          );
+
+          console.log(
+            `Found ${reportsData.length} reports for filtering by branch access`
+          );
+
+          // Array to store allowed report IDs
+          allowedReportIds = [];
+
+          // For each report, check if its primary field value matches any of the user's branch values
+          for (const report of reportsData) {
+            let hasAccess = false;
+            let primaryFieldName = report.primary_field_name;
+            let primaryFieldValue = report.primary_field_value;
+
+            // If primary_field_value is missing, try to extract from content
+            if (!primaryFieldValue && report.content) {
+              try {
+                const content =
+                  typeof report.content === "string"
+                    ? JSON.parse(report.content)
+                    : report.content;
+
+                if (content.primaryField) {
+                  primaryFieldName = content.primaryField.name;
+                  primaryFieldValue = content.primaryField.value;
+                }
+              } catch (e) {
+                console.error("Error parsing report content:", e);
+              }
+            }
+
+            if (!primaryFieldValue) {
+              console.log(
+                `Report ${report.id} has no primary field value, skipping`
+              );
+              continue;
+            }
+
+            // Convert to string for comparison
+            const primaryFieldValueStr =
+              String(primaryFieldValue).toLowerCase();
+
+            // Check if any of the user's branch values matches this report's primary field value
+            for (const branchValue of primaryFieldValues) {
+              const branchValueStr = String(branchValue).toLowerCase();
+
+              // Check for exact match or substring match
+              if (
+                primaryFieldValueStr === branchValueStr ||
+                primaryFieldValueStr.includes(branchValueStr) ||
+                branchValueStr.includes(primaryFieldValueStr)
+              ) {
+                console.log(
+                  `Match found: Report value "${primaryFieldValueStr}" matches branch value "${branchValueStr}"`
+                );
+                hasAccess = true;
+                break;
+              }
+            }
+
+            // If user has access to this report's branch, add the report ID to allowed list
+            if (hasAccess) {
+              allowedReportIds.push(report.id);
+              console.log(`Adding report ${report.id} to allowed list`);
+            }
+          }
+
+          // If we found allowed reports, add them to the WHERE clause
+          if (allowedReportIds.length > 0) {
+            whereClause += " AND r.id IN (?)";
+            queryParams.push(allowedReportIds);
+            console.log(
+              `Filtered to ${allowedReportIds.length} reports that the user has access to`
+            );
+          } else {
+            // If client user has no access to any reports, return empty array
+            console.log(`Client user has no access to any reports`);
+            return res.status(200).json({
+              status: "success",
+              data: [],
+              message: "No reports found for this user's branch assignments",
+            });
+          }
+        } catch (error) {
+          console.error(`Error filtering reports by branch access:`, error);
+          // Continue with regular query if branch filtering fails
+        }
+      } else {
+        console.log(`No branches table found for client`);
+      }
+    } else {
+      console.log(
+        `No branch filtering applied: user_role=${user_role}, user_email=${user_email}`
+      );
+    }
 
     // Execute the query with our dynamic WHERE clause
     const query = `
