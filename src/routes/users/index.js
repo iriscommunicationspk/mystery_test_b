@@ -13,5 +13,6 @@ userRouter.get("/get/:id", userController.get_user);
 userRouter.put("/update/:id", userController.update_user);
 userRouter.delete("/delete/:id", userController.delete_user);
 userRouter.post("/upload", upload.single("file"), userController.upload_users);
+userRouter.post("/send-credentials", userController.sendCredentials);
 
 module.exports = userRouter;

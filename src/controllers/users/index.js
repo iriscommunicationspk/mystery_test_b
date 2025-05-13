@@ -1,4 +1,5 @@
 const db = require("../../database/sql");
+const { sendUserCredentialsEmail } = require("../../utils/mail");
 
 async function fetch(request, response) {
   try {
@@ -542,13 +543,110 @@ async function upload_users(request, response) {
   }
 }
 
-const clientController = {
+/**
+ * Send credentials emails to selected users
+ * Decrypts/generates passwords and sends emails with login details
+ */
+async function sendCredentials(request, response) {
+  try {
+    const { userIds } = request.body;
+
+    // Validate input
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return response.status(400).json({
+        message: "Please provide a valid array of user IDs",
+      });
+    }
+
+    // Get a connection from the database
+    const connection = await db.getConnection();
+
+    try {
+      // Fetch user details for the given IDs
+      const [users] = await connection.query(
+        `SELECT uuid, email, first_name, last_name, name 
+         FROM users 
+         WHERE uuid IN (?)`,
+        [userIds]
+      );
+
+      if (users.length === 0) {
+        return response.status(404).json({
+          message: "No valid users found with the provided IDs",
+        });
+      }
+
+      // For each user, generate a temporary password and send email
+      const results = { successful: [], failed: [] };
+
+      for (const user of users) {
+        try {
+          // Generate a random password (you can use a more sophisticated method)
+          const tempPassword = Math.random().toString(36).slice(-8);
+
+          // Update the user's password in the database (hashed)
+          await connection.query(
+            "UPDATE users SET password = ? WHERE uuid = ?",
+            [tempPassword, user.uuid]
+          );
+
+          // Format user's name
+          const userName =
+            user.name ||
+            `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
+            user.email;
+
+          // Send the email
+          await sendUserCredentialsEmail(user.email, userName, tempPassword);
+
+          // Add to successful results
+          results.successful.push({
+            uuid: user.uuid,
+            email: user.email,
+            name: userName,
+          });
+        } catch (error) {
+          console.error(`Error processing user ${user.uuid}:`, error);
+
+          // Add to failed results
+          results.failed.push({
+            uuid: user.uuid,
+            email: user.email,
+            reason: error.message || "Unknown error",
+          });
+        }
+      }
+
+      return response.status(200).json({
+        message: `Credentials sent to ${results.successful.length} users`,
+        results: {
+          total: users.length,
+          successful: results.successful.length,
+          failed: results.failed.length,
+          details: results,
+        },
+      });
+    } finally {
+      // Release the connection back to the database
+      connection.release();
+    }
+  } catch (error) {
+    console.error("Error sending credentials:", error);
+    return response.status(500).json({
+      error: error.message,
+      message: "Error sending credentials to users",
+    });
+  }
+}
+
+module.exports = {
   fetch,
   fetch_client_users,
   get_user,
   update_user,
   delete_user,
   upload_users,
+  sendCredentials,
 };
 
-module.exports = clientController;
+// module.exports = clientController;
