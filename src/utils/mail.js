@@ -182,7 +182,7 @@ const sendUserCredentialsEmail = async (to, name = "", password = "") => {
     const transporter = await createTransporter();
 
     // Frontend URL (should be in ENV)
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const frontendUrl = "https://ms.iriscommunications.cloud";
 
     // Login URL
     const loginUrl = `${frontendUrl}/`;
