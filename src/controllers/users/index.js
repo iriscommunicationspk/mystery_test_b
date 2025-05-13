@@ -407,7 +407,7 @@ async function upload_users(request, response) {
       };
 
       // Default password (hashed)
-      const DEFAULT_PASSWORD = "112233";
+      const DEFAULT_PASSWORD = "Iris@123";
       const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
       // Process each row (expected to have an email column/property)
@@ -545,11 +545,12 @@ async function upload_users(request, response) {
 
 /**
  * Send credentials emails to selected users
- * Decrypts/generates passwords and sends emails with login details
+ * Uses a predetermined password, stores it hashed in DB, and sends the plain text in email
  */
 async function sendCredentials(request, response) {
   try {
     const { userIds } = request.body;
+    const bcrypt = require("bcrypt");
 
     // Validate input
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
@@ -576,18 +577,19 @@ async function sendCredentials(request, response) {
         });
       }
 
-      // For each user, generate a temporary password and send email
+      // Use a predetermined password for all users
+      const plainPassword = "Iris@123"; // Plain text password to send in email
+      const hashedPassword = await bcrypt.hash(plainPassword, 10); // Hashed password to store in DB
+
+      // For each user, update password and send email
       const results = { successful: [], failed: [] };
 
       for (const user of users) {
         try {
-          // Generate a random password (you can use a more sophisticated method)
-          const tempPassword = Math.random().toString(36).slice(-8);
-
-          // Update the user's password in the database (hashed)
+          // Update the user's password in the database with the hashed password
           await connection.query(
             "UPDATE users SET password = ? WHERE uuid = ?",
-            [tempPassword, user.uuid]
+            [hashedPassword, user.uuid]
           );
 
           // Format user's name
@@ -596,8 +598,8 @@ async function sendCredentials(request, response) {
             `${user.first_name || ""} ${user.last_name || ""}`.trim() ||
             user.email;
 
-          // Send the email
-          await sendUserCredentialsEmail(user.email, userName, tempPassword);
+          // Send the email with the plain text password
+          await sendUserCredentialsEmail(user.email, userName, plainPassword);
 
           // Add to successful results
           results.successful.push({
@@ -648,5 +650,3 @@ module.exports = {
   upload_users,
   sendCredentials,
 };
-
-// module.exports = clientController;
